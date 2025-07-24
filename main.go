@@ -1,9 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,43 +14,56 @@ import (
 )
 
 func main() {
-	dir := "./sample"
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		panic(err)
-	}
+	var dry bool
+	flag.BoolVar(&dry, "dry", true, "Real or dry run")
+	flag.Parse()
 
-	count := 0
-	var toRename []string
+	walkDir := "sample"
+	toRename := make(map[string][]string)
+	filepath.Walk(walkDir, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
 
-	for _, file := range files {
-		if file.IsDir() {
-		} else {
-			_, err := match(file.Name(), 4)
-			if err == nil {
-				count++
-				toRename = append(toRename, file.Name())
+		curDir := filepath.Dir(path)
+
+		if m, err := match(info.Name()); err == nil {
+			key := filepath.Join(curDir, fmt.Sprintf("%s.%s", m.base, m.ext))
+			toRename[key] = append(toRename[key], info.Name())
+		}
+
+		return nil
+	})
+
+	for key, files := range toRename {
+		dir := filepath.Dir(key)
+		n := len(files)
+		sort.Strings(files)
+
+		for i, filename := range files {
+			res, _ := match(filename)
+			newFilename := fmt.Sprintf("%s - %d of %d.%s", res.base, (i + 1), n, res.ext)
+			oldPath := filepath.Join(dir, filename)
+			newPath := filepath.Join(dir, newFilename)
+			fmt.Printf("mv %s => %s\n", oldPath, newPath)
+
+			if !dry {
+				err := os.Rename(oldPath, newPath)
+				if err != nil {
+					fmt.Println("Error renaming:", oldPath, newPath, err.Error())
+				}
 			}
-		}
-	}
-
-	for _, origFilename := range toRename {
-		origPath := filepath.Join(dir, origFilename)
-		newFilename, err := match(origFilename, count)
-		if err != nil {
-			panic(err)
-		}
-
-		newPath := filepath.Join(dir, newFilename)
-		fmt.Printf("mv %s => %s\n", origPath, newPath)
-		err = os.Rename(origPath, newPath)
-		if err != nil {
-			panic(err)
 		}
 	}
 }
 
-func match(fileName string, total int) (string, error) {
+type matchResult struct {
+	base  string
+	index int
+	ext   string
+}
+
+func match(fileName string) (*matchResult, error) {
 	pieces := strings.Split(fileName, ".")
 	ext := pieces[len(pieces)-1]
 	tmp := strings.Join(pieces[0:len(pieces)-1], ".")
@@ -56,9 +71,9 @@ func match(fileName string, total int) (string, error) {
 	name := strings.Join(pieces[0:len(pieces)-1], "_")
 	number, err := strconv.Atoi(pieces[len(pieces)-1])
 	if err != nil {
-		return "", fmt.Errorf("%s did not match our pattern", fileName)
+		return nil, fmt.Errorf("%s did not match our pattern", fileName)
 	}
 
 	caser := cases.Title(language.English)
-	return fmt.Sprintf("%s - %d of %d.%s", caser.String(name), number, total, ext), nil
+	return &matchResult{caser.String(name), number, ext}, nil
 }
