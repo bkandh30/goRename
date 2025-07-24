@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -11,14 +12,40 @@ import (
 )
 
 func main() {
-	fileName := "birthday_001.txt"
-
-	newName, err := match(fileName, 4)
+	dir := "./sample"
+	files, err := os.ReadDir(dir)
 	if err != nil {
-		fmt.Println("no match")
-		os.Exit(1)
+		panic(err)
 	}
-	fmt.Println(newName)
+
+	count := 0
+	var toRename []string
+
+	for _, file := range files {
+		if file.IsDir() {
+		} else {
+			_, err := match(file.Name(), 4)
+			if err == nil {
+				count++
+				toRename = append(toRename, file.Name())
+			}
+		}
+	}
+
+	for _, origFilename := range toRename {
+		origPath := filepath.Join(dir, origFilename)
+		newFilename, err := match(origFilename, count)
+		if err != nil {
+			panic(err)
+		}
+
+		newPath := filepath.Join(dir, newFilename)
+		fmt.Printf("mv %s => %s\n", origPath, newPath)
+		err = os.Rename(origPath, newPath)
+		if err != nil {
+			panic(err)
+		}
+	}
 }
 
 func match(fileName string, total int) (string, error) {
